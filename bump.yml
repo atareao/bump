@@ -1,0 +1,5 @@
+current_version: 1.2.3
+replaces:
+  - file: Cargo.toml
+    search: version = "{{current_version}}"
+    replace: version = "{{new_version}}"
