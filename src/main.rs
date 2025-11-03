@@ -11,13 +11,15 @@ use tracing_subscriber::{
 use tracing::debug;
 
 mod config;
+mod cli;
+use clap::Parser;
 
+use cli::{Cli, Commands, UpgradeArgs};
 use config::Config;
 
 const DESCRIPTION: &str = env!("CARGO_PKG_DESCRIPTION");
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const AUTHORS: &str = env!("CARGO_PKG_AUTHORS");
-
 
 #[tokio::main]
 async fn main() {
@@ -28,6 +30,39 @@ async fn main() {
         .init();
 
     debug!("log_level: {}", log_level);
+
+    let cli = Cli::parse();
+    match &cli.command {
+        Commands::Upgrade(args) => {
+            let config_path = get_config_path().await;
+            let config = Config::read(&config_path).await;
+            config.upgrade(args).await;
+        },
+        Commands::Preview(args) => {
+            let config_path = get_config_path().await;
+            let config = Config::new(config_path).await;
+            let config = Config::read(&config_path).await;
+            config.preview(args).await;
+        },
+        Commands::Show => {
+            let config_path = get_config_path().await;
+            let config = Config::read(&config_path).await;
+            let config = Config::new(config_path).await;
+            config.show().await;
+        },
+    }
+}
+
+async fn get_config_path() -> PathBuf {
+    match get_config().await{
+        Some(path) => path,
+        None => {
+            let mut path = env::current_dir().unwrap();
+            path.push("bump.yml");
+            Config::write_default(&path).await;
+            path
+        }
+    }
 }
 
 async fn get_config() -> Option<PathBuf>{
