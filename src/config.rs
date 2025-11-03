@@ -16,13 +16,6 @@ pub struct Replace {
 }
 
 impl Replace {
-    pub fn new(file: String, search: String, replace: String) -> Self {
-        Replace {
-            file,
-            search,
-            replace,
-        }
-    }
     pub fn default() -> Self {
         Self {
             file: get_default_file(),
@@ -73,17 +66,23 @@ impl Config {
             serde_yaml::to_string(&default).unwrap().as_bytes()).await;
     }
 
-    pub async fn read(file: &PathBuf) -> Option<Self>{
-        match tokio::fs::read_to_string(file).await {
-            Ok(content) => {
-                match serde_yaml::from_str::<Config>(&content){
-                    Ok(config) => Some(config),
-                    Err(_) => None,
-                }
-            },
-            Err(_) => None,
+    pub async fn read(file_path: &PathBuf) -> Option<Self> {
+        let content = match tokio::fs::read_to_string(file_path).await {
+            Ok(c) => c,
+            Err(e) => {
+                error!("Failed to read config file '{}': {}", file_path.display(), e);
+                return None;
+            }
+        };
+        match serde_yaml::from_str::<Self>(&content) {
+            Ok(config) => Some(config),
+            Err(e) => {
+                error!("Failed to deserialize config file '{}': {}", file_path.display(), e);
+                None
+            }
         }
     }
+
     pub async fn write(&self, file: &PathBuf){
         match tokio::fs::write(
                 file,
