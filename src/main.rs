@@ -13,7 +13,7 @@ const APP_NAME: &str = "vampus";
 
 #[tokio::main]
 async fn main() {
-    let log_level = env::var("RUST_LOG").unwrap_or("DEBUG".to_string());
+    let log_level = env::var("RUST_LOG").unwrap_or("ERROR".to_string());
     tracing_subscriber::registry()
         .with(EnvFilter::from_str(&log_level).unwrap())
         .with(tracing_subscriber::fmt::layer())
@@ -34,7 +34,7 @@ async fn main() {
                     match increment_version(&config.current_version, increment_type) {
                         Ok(new_version) => {
                             println!("Current version: {}", config.current_version);
-                            println!("New version (preview): {}", new_version);
+                            println!("New version: {}", new_version);
                             for replace in &config.replaces {
                                 let from = replace
                                     .search
