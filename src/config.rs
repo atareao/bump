@@ -3,6 +3,7 @@ use serde::{
     Deserialize
 };
 use std::path::PathBuf;
+use tracing::{debug, error};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Replace {
@@ -59,12 +60,6 @@ fn get_default_replaces() -> Vec<Replace> {
 }
 
 impl Config {
-    pub fn new(current_version: String, replaces: Vec<Replace>) -> Self {
-        Config {
-            current_version,
-            replaces,
-        }
-    }
     fn default() -> Self{
         Self{
             current_version: get_default_current_version(),
@@ -87,6 +82,14 @@ impl Config {
                 }
             },
             Err(_) => None,
+        }
+    }
+    pub async fn write(&self, file: &PathBuf){
+        match tokio::fs::write(
+                file,
+            serde_yaml::to_string(self).unwrap().as_bytes()).await{
+            Ok(_) => debug!("Successfully wrote config file to {}", file.display()),
+            Err(e) => error!("Failed to write config file: {}", e),
         }
     }
 }

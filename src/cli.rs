@@ -16,17 +16,17 @@ pub struct Cli {
 }
 
 #[derive(Subcommand)]
-enum Commands {
+pub enum Commands {
     Upgrade(UpgradeArgs),
     Preview(UpgradeArgs),
     Show,
 }
 
 #[derive(Args)]
-struct UpgradeArgs {
+pub struct UpgradeArgs {
     /// Set the change type (major, minor, patch)
     #[arg(short, long)]
-    change: Option<String>,
+    pub change: Option<String>,
 }
 
 
