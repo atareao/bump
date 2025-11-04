@@ -1,9 +1,3 @@
-¡Por supuesto\! Analizando los archivos `main.rs`, `cli.rs` y `config.rs`, he determinado que estás creando una herramienta de línea de comandos (CLI) en **Rust** llamada **`vampus`** para automatizar el **versionado de proyectos** basado en el **Versionado Semántico (SemVer)** y la actualización de archivos de configuración (`Cargo.toml` u otros).
-
-Aquí tienes un archivo **`README.md`** completo y profesional para tu proyecto, optimizado para GitHub:
-
------
-
 # 🧛‍♂️ Vampus: CLI de Versionado Semántico
 
 **Vampus** es una herramienta de línea de comandos asíncrona escrita en **Rust** diseñada para simplificar y automatizar el proceso de actualización de la versión de tu proyecto, asegurando la consistencia en múltiples archivos de configuración (como `Cargo.toml`, `package.json`, etc.) basados en el esquema de **Versionado Semántico (SemVer)**.
