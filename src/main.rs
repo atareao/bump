@@ -87,7 +87,7 @@ async fn main() {
             let config_path = get_config_path().await;
             match Config::read(&config_path).await {
                 Some(config) => {
-                    println!("Current version: {}", config.current_version);
+                    println!("{}", config.current_version);
                 }
                 None => error!("Failed to read config file at {}", config_path.display()),
             }
