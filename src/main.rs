@@ -72,7 +72,7 @@ async fn main() {
                             let mut all_files_verified = true;
 
                             // FASE 1: VERIFICACIÓN Y SIMULACIÓN
-                            print!("-- Verifying and simulating changes... --");
+                            println!("-- Verifying and simulating changes... --");
 
                             for replace in &config.replaces {
                                 
@@ -124,7 +124,7 @@ async fn main() {
 
                             // FASE 2: EJECUCIÓN (sin cambios)
                             if all_files_verified {
-                                print!("-- Applying changes... --");
+                                println!("-- Applying changes... --");
 
                                 for (file_path, content) in modified_files {
                                     match apply_replacement(file_path.as_str(), &content).await {
@@ -140,7 +140,7 @@ async fn main() {
                                 config.current_version = new_version;
                                 config.write(&config_path).await;
                                 println!(
-                                    "🎉 Success: Config version updated to {}",
+                                    "\n🎉 Success: Config version updated to {}",
                                     config.current_version
                                 );
                             } else {
@@ -235,7 +235,7 @@ async fn main() {
 
                             // FASE 2: EJECUCIÓN (sin cambios)
                             if all_files_verified {
-                                print!("-- Applying changes... --");
+                                println!("-- Applying changes... --");
 
                                 for (file_path, content) in modified_files {
                                     match apply_replacement(file_path.as_str(), &content).await {
