@@ -1,15 +1,206 @@
-use std::{env, path::PathBuf, str::FromStr};
+use regex::Regex;
+use std::{env, io, path::PathBuf, str::FromStr};
+use tokio::fs;
 use tracing::{debug, error};
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 mod cli;
 mod config;
 use clap::Parser;
-
-use cli::{Cli, Commands};
+use cli::{Cli, Commands, VersionArgs}; // Asegúrate de importar VersionArgs
 use config::Config;
 
 const APP_NAME: &str = "vampus";
+
+// =============================================================================================
+// LÓGICA DE ARCHIVOS (TRANSACCIONAL)
+// =============================================================================================
+
+/// Simula el reemplazo con RegEx, verifica que el cambio se hizo, y devuelve el contenido modificado.
+pub async fn simulate_replacement(
+    path: &str,
+    pattern_from: &str,
+    replacement_to: &str,
+    pattern_to: &str,
+) -> Result<String, io::Error> {
+    // 1. Compilar la expresión regular de búsqueda (FROM).
+    let re_from = Regex::new(pattern_from).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Error al compilar RegEx FROM '{}': {}", pattern_from, e),
+        )
+    })?;
+
+    // 2. Compilar la expresión regular de VERIFICACIÓN (TO).
+    let re_to = Regex::new(pattern_to).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Error al compilar RegEx TO '{}': {}", pattern_to, e),
+        )
+    })?;
+
+    // 3. Lectura y Conversión (I/O).
+    let content_bytes = fs::read(path).await?;
+    let content = String::from_utf8(content_bytes).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "El archivo '{}' no contiene texto UTF-8 válido: {}",
+                path, e
+            ),
+        )
+    })?;
+
+    // 4. Verificación de existencia (CRÍTICO): El patrón antiguo DEBE estar presente.
+    if !re_from.is_match(&content) {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!(
+                "Patrón antiguo '{}' NO encontrado en '{}'.",
+                pattern_from, path
+            ),
+        ));
+    }
+
+    // 5. Reemplazo de la Cadena usando la RegEx (Simulación).
+    let modified_content = re_from.replace_all(&content, replacement_to);
+
+    // 6. Verificación del Reemplazo (CRÍTICO): La nueva versión DEBE estar presente.
+    if re_to.is_match(&modified_content) {
+        Ok(modified_content.into_owned()) // Devuelve el String modificado
+    } else {
+        Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "El patrón de nueva versión '{}' no se encontró después de la simulación. El reemplazo no coincidió con el formato esperado.",
+                pattern_to
+            ),
+        ))
+    }
+}
+
+/// Escribe el contenido pre-calculado en el archivo, reemplazando el contenido existente.
+pub async fn apply_replacement(path: &str, content: &str) -> Result<(), io::Error> {
+    fs::write(path, content.as_bytes()).await
+}
+
+// =============================================================================================
+// ENUMS Y LÓGICA DE VERSIONES (SemVer)
+// =============================================================================================
+
+// NUEVA ENUM para manejar la operación (Incremento o Decremento)
+enum Operation {
+    Increment,
+    Decrement,
+}
+
+/// Determina el tipo de cambio de versión basado en las flags mutuamente excluyentes.
+fn get_version_change(args: &VersionArgs) -> (&'static str, Operation) {
+    // Nota: Esta función ya no necesita el argumento 'operation' porque la operación
+    // real se define en el match principal (Upgrade vs Downgrade).
+
+    // Si la operación es explícita, el tipo de cambio se determina por la flag
+    if args.major {
+        ("major", Operation::Increment) // La operación de aquí es dummy, solo se usa el tipo de cambio
+    } else if args.minor {
+        ("minor", Operation::Increment)
+    } else {
+        ("patch", Operation::Increment) // Patch es el valor por defecto
+    }
+}
+
+/// Lógica SemVer: Calcula la nueva (o anterior) versión.
+fn calculate_version(
+    current_version: &str,
+    change_type: &str,
+    operation: Operation,
+) -> Result<String, String> {
+    let parts: Vec<&str> = current_version.split('.').collect();
+    if parts.len() != 3 {
+        return Err(format!("Versión actual no válida: {}", current_version));
+    }
+
+    let mut major = parts[0]
+        .parse::<i32>()
+        .map_err(|_| "Error al parsear major".to_string())?;
+    let mut minor = parts[1]
+        .parse::<i32>()
+        .map_err(|_| "Error al parsear minor".to_string())?;
+    let mut patch = parts[2]
+        .parse::<i32>()
+        .map_err(|_| "Error al parsear patch".to_string())?;
+
+    match operation {
+        Operation::Increment => match change_type {
+            "major" => {
+                major += 1;
+                minor = 0;
+                patch = 0;
+            }
+            "minor" => {
+                minor += 1;
+                patch = 0;
+            }
+            "patch" => {
+                patch += 1;
+            }
+            _ => return Err(format!("Tipo de cambio desconocido: {}", change_type)),
+        },
+        Operation::Decrement => match change_type {
+            "major" => {
+                if major == 0 {
+                    return Err("No se puede hacer downgrade de major 0".to_string());
+                }
+                major -= 1;
+                minor = 0;
+                patch = 0;
+            }
+            "minor" => {
+                if minor == 0 && major == 0 {
+                    return Err("No se puede hacer downgrade de minor 0 y major 0".to_string());
+                } else if minor == 0 {
+                    return Err(
+                        "No se puede hacer downgrade de minor 0 sin especificar major".to_string(),
+                    );
+                }
+                minor -= 1;
+                patch = 0;
+            }
+            "patch" => {
+                if patch == 0 && minor == 0 && major == 0 {
+                    return Err("No se puede hacer downgrade de 0.0.0".to_string());
+                } else if patch == 0 {
+                    return Err(
+                        "No se puede hacer downgrade de patch 0 sin especificar minor".to_string(),
+                    );
+                }
+                patch -= 1;
+            }
+            _ => return Err(format!("Tipo de cambio desconocido: {}", change_type)),
+        },
+    }
+
+    if major < 0 || minor < 0 || patch < 0 {
+        return Err("Resultado de versión inválido (negativo)".to_string());
+    }
+
+    Ok(format!("{}.{}.{}", major, minor, patch))
+}
+
+/// Obtiene la ruta del archivo de configuración.
+async fn get_config_path() -> PathBuf {
+    let mut config_path = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    config_path.push(format!(".{}.yml", APP_NAME));
+
+    if !config_path.exists() {
+        config::Config::write_default(&config_path).await;
+    }
+    config_path
+}
+
+// =============================================================================================
+// MAIN Y LÓGICA DE COMANDOS
+// =============================================================================================
 
 #[tokio::main]
 async fn main() {
@@ -21,195 +212,256 @@ async fn main() {
 
     debug!("log_level: {}", log_level);
     let cli = Cli::parse();
-    match &cli.command {
-        Commands::Upgrade(args) => {
-            // 1. Determinar el tipo de incremento usando la nueva lógica
-            let increment_type = get_increment_type(args);
 
+    if cli.debug {
+        tracing_subscriber::registry()
+            .with(EnvFilter::from_str("debug").unwrap())
+            .with(tracing_subscriber::fmt::layer())
+            .init();
+        debug!("Modo DEBUG habilitado por flag CLI.");
+    }
+
+    match &cli.command {
+        // -------------------------------------------------------------------------------------
+        // COMANDO UPGRADE
+        // -------------------------------------------------------------------------------------
+        Commands::Upgrade(args) => {
+            let (change_type, _) = get_version_change(args);
             let config_path = get_config_path().await;
 
             match Config::read(&config_path).await {
                 Some(mut config) => {
-                    // 2. Usar el increment_type
-                    match increment_version(&config.current_version, increment_type) {
-                        Ok(new_version) => {
-                            println!("Current version: {}", config.current_version);
-                            println!("New version: {}", new_version);
-                            for replace in &config.replaces {
-                                let from = replace
-                                    .search
-                                    .replace("{{current_version}}", &config.current_version);
-                                let to = replace.replace.replace("{{new_version}}", &new_version);
-                                match replace_in_file(replace.file.as_str(), &from, &to).await {
-                                    Ok(_) => {
-                                        debug!(UpdatedFile=%replace.file, "File updated successfully")
-                                    }
-                                    Err(e) => {
-                                        error!(File=%replace.file, "Failed to update file: {}", e)
-                                    }
-                                }
-                                let file_path = PathBuf::from(replace.file.as_str());
-                                println!("Updating file: {}", file_path.display());
-                            }
-                            config.current_version = new_version;
-                            config.write(&config_path).await;
-                        }
-                        Err(e) => {
-                            error!("{}", e);
-                        }
-                    }
-                }
-                None => error!("Failed to read config file at {}", config_path.display()),
-            }
-        }
-        Commands::Preview(args) => {
-            // 1. Determinar el tipo de incremento usando la nueva lógica
-            let increment_type = get_increment_type(args);
-
-            let config_path = get_config_path().await;
-            match Config::read(&config_path).await {
-                Some(config) => {
-                    // 2. Usar el increment_type
-                    match increment_version(&config.current_version, increment_type) {
+                    match calculate_version(
+                        &config.current_version,
+                        change_type,
+                        Operation::Increment,
+                    ) {
                         Ok(new_version) => {
                             println!("Current version: {}", config.current_version);
                             println!("New version (preview): {}", new_version);
+
+                            let mut modified_files = Vec::new();
+                            let mut all_files_verified = true;
+
+                            // FASE 1: VERIFICACIÓN Y SIMULACIÓN
+                            println!("\n-- Verificando y simulando cambios... --");
+
+                            for replace in &config.replaces {
+                                let pattern_from = format!(
+                                    "(?m){}",
+                                    replace
+                                        .search
+                                        .replace("{{current_version}}", &config.current_version)
+                                );
+
+                                let pattern_to = format!(
+                                    "(?m){}",
+                                    replace.search.replace("{{current_version}}", &new_version)
+                                );
+
+                                let replacement_to =
+                                    replace.replace.replace("{{new_version}}", &new_version);
+
+                                // Corregido: Uso de macro debug! con un único string de formato
+                                debug!(
+                                    "Simulando archivo: {} | FROM: {} | TO (Verif): {}",
+                                    replace.file, pattern_from, pattern_to
+                                );
+
+                                match simulate_replacement(
+                                    replace.file.as_str(),
+                                    &pattern_from,
+                                    &replacement_to,
+                                    &pattern_to,
+                                )
+                                .await
+                                {
+                                    Ok(content) => {
+                                        modified_files.push((replace.file.clone(), content));
+                                    }
+                                    Err(e) => {
+                                        error!(File=%replace.file, "FALLO DE SIMULACIÓN CRÍTICA: {}", e);
+                                        all_files_verified = false;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            // FASE 2: EJECUCIÓN
+                            if all_files_verified {
+                                println!("\n-- Aplicando cambios a disco... --");
+
+                                for (file_path, content) in modified_files {
+                                    match apply_replacement(file_path.as_str(), &content).await {
+                                        Ok(_) => {
+                                            println!("✅ Actualizado: {}", file_path);
+                                        }
+                                        Err(e) => {
+                                            error!(File=%file_path, "FALLO CRÍTICO al escribir: {}", e);
+                                        }
+                                    }
+                                }
+
+                                config.current_version = new_version;
+                                config.write(&config_path).await;
+                                println!(
+                                    "\n🎉 Éxito: Versión de configuración actualizada a {}",
+                                    config.current_version
+                                );
+                            } else {
+                                error!(
+                                    "\nUpgrade abortado. No se realizaron cambios en los archivos."
+                                );
+                            }
                         }
                         Err(e) => {
-                            error!("{}", e);
+                            error!("Error al calcular la versión: {}", e);
                         }
                     }
                 }
                 None => error!("Failed to read config file at {}", config_path.display()),
             }
         }
+        // -------------------------------------------------------------------------------------
+        // COMANDO DOWNGRADE
+        // -------------------------------------------------------------------------------------
+        Commands::Downgrade(args) => {
+            let (change_type, _) = get_version_change(args);
+            let config_path = get_config_path().await;
+
+            match Config::read(&config_path).await {
+                Some(mut config) => {
+                    match calculate_version(
+                        &config.current_version,
+                        change_type,
+                        Operation::Decrement,
+                    ) {
+                        Ok(target_version) => {
+                            println!("Current version: {}", config.current_version);
+                            println!("Target downgrade version (preview): {}", target_version);
+
+                            let current_version = config.current_version.clone();
+                            let mut modified_files = Vec::new();
+                            let mut all_files_verified = true;
+
+                            // FASE 1: VERIFICACIÓN Y SIMULACIÓN
+                            println!("\n-- Verificando y simulando cambios (Downgrade)... --");
+
+                            for replace in &config.replaces {
+                                let pattern_from = format!(
+                                    "(?m){}",
+                                    replace
+                                        .search
+                                        .replace("{{current_version}}", &current_version)
+                                );
+
+                                let pattern_to = format!(
+                                    "(?m){}",
+                                    replace
+                                        .search
+                                        .replace("{{current_version}}", &target_version)
+                                );
+
+                                let replacement_to =
+                                    replace.replace.replace("{{new_version}}", &target_version);
+
+                                // Corregido: Uso de macro debug! con un único string de formato
+                                debug!(
+                                    "Simulando archivo: {} | FROM: {} | TO (Verif): {}",
+                                    replace.file, pattern_from, pattern_to
+                                );
+
+                                match simulate_replacement(
+                                    replace.file.as_str(),
+                                    &pattern_from,
+                                    &replacement_to,
+                                    &pattern_to,
+                                )
+                                .await
+                                {
+                                    Ok(content) => {
+                                        modified_files.push((replace.file.clone(), content));
+                                    }
+                                    Err(e) => {
+                                        error!(File=%replace.file, "FALLO DE SIMULACIÓN CRÍTICA: {}", e);
+                                        all_files_verified = false;
+                                        break;
+                                    }
+                                }
+                            }
+
+                            // FASE 2: EJECUCIÓN
+                            if all_files_verified {
+                                println!("\n-- Aplicando cambios a disco... --");
+
+                                for (file_path, content) in modified_files {
+                                    match apply_replacement(file_path.as_str(), &content).await {
+                                        Ok(_) => {
+                                            println!("✅ Actualizado (Downgrade): {}", file_path);
+                                        }
+                                        Err(e) => {
+                                            error!(File=%file_path, "FALLO CRÍTICO al escribir: {}", e);
+                                        }
+                                    }
+                                }
+
+                                config.current_version = target_version.clone();
+                                config.write(&config_path).await;
+                                println!(
+                                    "\n🎉 Éxito: Versión de configuración actualizada a {}",
+                                    config.current_version
+                                );
+                            } else {
+                                error!(
+                                    "\nDowngrade abortado debido a fallos de simulación en los archivos."
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            error!("Error al calcular la versión de downgrade: {}", e);
+                        }
+                    }
+                }
+                None => error!("Failed to read config file at {}", config_path.display()),
+            }
+        }
+        // -------------------------------------------------------------------------------------
+        // COMANDO PREVIEW (Lógica corregida)
+        // -------------------------------------------------------------------------------------
+        Commands::Preview(args) => {
+            let (change_type, _) = get_version_change(args);
+            let config_path = get_config_path().await;
+
+            // CORRECCIÓN: Evitamos llamar a to_string() en el enum.
+            // 'Preview' se fija a 'Increment' por ser la expectativa por defecto.
+            let operation = Operation::Increment;
+
+            match Config::read(&config_path).await {
+                Some(config) => {
+                    match calculate_version(&config.current_version, change_type, operation) {
+                        Ok(new_version) => {
+                            println!("Current version: {}", config.current_version);
+                            println!("Preview version (Increment): {}", new_version);
+                        }
+                        Err(e) => {
+                            error!("Error al calcular la versión: {}", e);
+                        }
+                    }
+                }
+                None => error!("Failed to read config file at {}", config_path.display()),
+            }
+        }
+        // -------------------------------------------------------------------------------------
+        // COMANDO SHOW
+        // -------------------------------------------------------------------------------------
         Commands::Show => {
             let config_path = get_config_path().await;
             match Config::read(&config_path).await {
                 Some(config) => {
-                    println!("{}", config.current_version);
+                    println!("Current project version: {}", config.current_version);
                 }
                 None => error!("Failed to read config file at {}", config_path.display()),
             }
-        }
-    }
-}
-
-async fn get_config_path() -> PathBuf {
-    let config_path = match std::env::current_dir() {
-        Ok(mut path) => {
-            path.push(format!(".{}.yml", APP_NAME));
-            path
-        }
-        Err(e) => panic!(
-            "Error fatal: No se puede obtener el directorio actual: {}",
-            e
-        ),
-    };
-    debug!(
-        "Buscando archivo de configuración en: {}",
-        config_path.display()
-    );
-    if tokio::fs::metadata(&config_path).await.is_err() {
-        Config::write_default(&config_path).await;
-        debug!("Archivo de configuración creado con valores por defecto.");
-    }
-    config_path
-}
-
-pub fn increment_version(current_version: &str, increment_type: &str) -> Result<String, String> {
-    // 1. Parsear la versión actual (X.Y.Z)
-    let parts: Vec<&str> = current_version.split('.').collect();
-
-    // Verificación básica del formato: debe tener exactamente 3 partes.
-    if parts.len() != 3 {
-        return Err(format!(
-            "Formato de versión inválido. Se esperaba 'X.Y.Z', se recibió '{}'.",
-            current_version
-        ));
-    }
-
-    // 2. Intentar parsear cada parte como un número entero (u32)
-    let major = parts[0]
-        .parse::<u32>()
-        .map_err(|_| format!("Major (X) no es un número válido: {}", parts[0]))?;
-    let minor = parts[1]
-        .parse::<u32>()
-        .map_err(|_| format!("Minor (Y) no es un número válido: {}", parts[1]))?;
-    let patch = parts[2]
-        .parse::<u32>()
-        .map_err(|_| format!("Patch (Z) no es un número válido: {}", parts[2]))?;
-
-    // 3. Aplicar el incremento basado en el tipo
-    let new_version = match increment_type.to_lowercase().as_str() {
-        "patch" => format!("{}.{}.{}", major, minor, patch + 1),
-
-        "minor" => format!("{}.{}.{}", major, minor + 1, 0),
-
-        "major" => format!("{}.{}.{}", major + 1, 0, 0),
-
-        _ => {
-            return Err(format!(
-                "Tipo de incremento inválido. Se esperaba 'major', 'minor' o 'patch', se recibió '{}'.",
-                increment_type
-            ));
-        }
-    };
-
-    Ok(new_version)
-}
-
-fn get_increment_type(args: &cli::UpgradeArgs) -> &'static str {
-    if args.major {
-        "major"
-    } else if args.minor {
-        "minor"
-    } else {
-        "patch"
-    }
-}
-
-/// Reemplaza todas las ocurrencias de 'from' por 'to' en el archivo especificado por 'path'.
-///
-/// # Argumentos
-/// * `path` - La ruta del archivo (ej: "config.txt").
-/// * `from` - La subcadena a buscar.
-/// * `to` - La subcadena de reemplazo.
-///
-/// # Retorno
-/// Devuelve un Result<(), std::io::Error> que indica éxito o un error de I/O.
-pub async fn replace_in_file(path: &str, from: &str, to: &str) -> Result<(), std::io::Error> {
-    // 1. Lectura Asíncrona: Lee todo el contenido del archivo en memoria.
-    // El contenido se lee como un vector de bytes (Vec<u8>).
-    let content_bytes = match tokio::fs::read(path).await {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            eprintln!("Error al leer el archivo '{}': {}", path, e);
-            return Err(e);
-        }
-    };
-
-    // 2. Conversión a String: Convierte los bytes leídos a una cadena UTF-8.
-    let content = match String::from_utf8(content_bytes) {
-        Ok(s) => s,
-        Err(e) => {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("El archivo no contiene texto UTF-8 válido: {}", e),
-            ));
-        }
-    };
-
-    // 3. Reemplazo de la Cadena: Utiliza el método 'replace' de String.
-    // Este paso es síncrono, ya que la sustitución se realiza en la memoria RAM.
-    let modified_content = content.replace(from, to);
-
-    // 4. Escritura Asíncrona: Sobrescribe el archivo original con el contenido modificado.
-    match tokio::fs::write(path, modified_content).await {
-        Ok(_) => Ok(()),
-        Err(e) => {
-            eprintln!("Error al escribir en el archivo '{}': {}", path, e);
-            Err(e)
         }
     }
 }

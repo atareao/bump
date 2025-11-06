@@ -18,32 +18,35 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Commands {
     /// Increments the project version (updates the version number in the configuration).
-    Upgrade(UpgradeArgs),
+    // Usamos la nueva estructura compartida
+    Upgrade(VersionArgs),
     
     /// Shows the resulting project version without applying the change.
-    Preview(UpgradeArgs),
+    Preview(VersionArgs),
+
+    /// Sets the project version back to a calculated previous version and updates the files.
+    // Usamos la nueva estructura compartida
+    Downgrade(VersionArgs), 
     
     /// Displays the current version of the project.
     Show,
 }
 
 #[derive(Args)]
-/// Arguments specific to the 'upgrade' and 'preview' commands.
-// Para forzar que el usuario elija al menos una opción, añade:
-// #[clap(group = clap::ArgGroup::new("VERSION_TYPE").required(true))]
-// Si no quieres forzar que elija una, el valor por defecto se gestiona en la lógica.
-pub struct UpgradeArgs {
+/// Arguments specific to version manipulation commands (upgrade, downgrade, preview).
+// Creamos una única estructura para ambos comandos
+pub struct VersionArgs {
     // --- Opciones de Versión Mutuamente Excluyentes ---
     
-    /// Increments the PATCH version (bug fixes).
+    /// Increments/Decrements the PATCH version (bug fixes).
     #[arg(long, action = ArgAction::SetTrue, group = "VERSION_TYPE")]
     pub patch: bool,
     
-    /// Increments the MINOR version (new features).
+    /// Increments/Decrements the MINOR version (new features).
     #[arg(long, action = ArgAction::SetTrue, group = "VERSION_TYPE")]
     pub minor: bool,
     
-    /// Increments the MAJOR version (breaking changes).
+    /// Increments/Decrements the MAJOR version (breaking changes).
     #[arg(long, action = ArgAction::SetTrue, group = "VERSION_TYPE")]
     pub major: bool,
 }
