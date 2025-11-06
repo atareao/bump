@@ -50,7 +50,7 @@ pub async fn simulate_replacement(
     let re_from = Regex::new(pattern_from).map_err(|e| {
         io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("Error al compilar RegEx FROM '{}': {}", pattern_from, e),
+            format!("Error compiling RegEx FROM '{}': {}", pattern_from, e),
         )
     })?;
 
@@ -58,7 +58,7 @@ pub async fn simulate_replacement(
     let re_to = Regex::new(pattern_to).map_err(|e| {
         io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("Error al compilar RegEx TO '{}': {}", pattern_to, e),
+            format!("Error compiling RegEx TO '{}': {}", pattern_to, e),
         )
     })?;
 
@@ -68,7 +68,7 @@ pub async fn simulate_replacement(
         io::Error::new(
             io::ErrorKind::InvalidData,
             format!(
-                "El archivo '{}' no contiene texto UTF-8 válido: {}",
+                "File '{}' does NOT contain valid UTF-8 text: {}",
                 path, e
             ),
         )
@@ -79,7 +79,7 @@ pub async fn simulate_replacement(
         return Err(io::Error::new(
             io::ErrorKind::NotFound,
             format!(
-                "Patrón antiguo '{}' NO encontrado en '{}'.",
+                "Last pattern '{}' NOT found in '{}'.",
                 pattern_from, path
             ),
         ));
@@ -87,7 +87,7 @@ pub async fn simulate_replacement(
 
     // 5. Reemplazo de la Cadena usando la RegEx (Simulación).
     let modified_content = re_from.replace_all(&content, replacement_to);
-    debug!("Contenido modificado simulado:\n{}", modified_content);
+    debug!("Content modified simulated:\n{}", modified_content);
 
     // 6. Verificación del Reemplazo (CRÍTICO): La nueva versión DEBE estar presente.
     if re_to.is_match(&modified_content) {
@@ -96,7 +96,7 @@ pub async fn simulate_replacement(
         Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!(
-                "El patrón de nueva versión '{}' no se encontró después de la simulación. El reemplazo no coincidió con el formato esperado.",
+                "New version pattern '{}' not found after simulation. Replacement did not match the expected format.",
                 pattern_to
             ),
         ))
@@ -142,18 +142,18 @@ pub fn calculate_version(
 ) -> Result<String, String> {
     let parts: Vec<&str> = current_version.split('.').collect();
     if parts.len() != 3 {
-        return Err(format!("Versión actual no válida: {}", current_version));
+        return Err(format!("Invalid current version format: {}", current_version));
     }
 
     let mut major = parts[0]
         .parse::<i32>()
-        .map_err(|_| "Error al parsear major".to_string())?;
+        .map_err(|_| "Error parsing major component".to_string())?;
     let mut minor = parts[1]
         .parse::<i32>()
-        .map_err(|_| "Error al parsear minor".to_string())?;
+        .map_err(|_| "Error parsing minor component".to_string())?;
     let mut patch = parts[2]
         .parse::<i32>()
-        .map_err(|_| "Error al parsear patch".to_string())?;
+        .map_err(|_| "Error parsing patch component".to_string())?;
 
     match operation {
         Operation::Increment => match change_type {
@@ -169,12 +169,12 @@ pub fn calculate_version(
             "patch" => {
                 patch += 1;
             }
-            _ => return Err(format!("Tipo de cambio desconocido: {}", change_type)),
+            _ => return Err(format!("Unknown change type: {}", change_type)),
         },
         Operation::Decrement => match change_type {
             "major" => {
                 if major == 0 {
-                    return Err("No se puede hacer downgrade de major 0".to_string());
+                    return Err("Cannot downgrade major version 0".to_string());
                 }
                 major -= 1;
                 minor = 0;
@@ -182,10 +182,10 @@ pub fn calculate_version(
             }
             "minor" => {
                 if minor == 0 && major == 0 {
-                    return Err("No se puede hacer downgrade de minor 0 y major 0".to_string());
+                    return Err("Cannot downgrade minor 0 when major is 0".to_string());
                 } else if minor == 0 {
                     return Err(
-                        "No se puede hacer downgrade de minor 0 sin especificar major".to_string(),
+                        "Cannot downgrade minor 0 without explicitly specifying --major".to_string(),
                     );
                 }
                 minor -= 1;
@@ -196,17 +196,17 @@ pub fn calculate_version(
                     return Err("No se puede hacer downgrade de 0.0.0".to_string());
                 } else if patch == 0 {
                     return Err(
-                        "No se puede hacer downgrade de patch 0 sin especificar minor".to_string(),
+                        "Cannot downgrade patch 0 without explicitly specifying --minor or --major".to_string(),
                     );
                 }
                 patch -= 1;
             }
-            _ => return Err(format!("Tipo de cambio desconocido: {}", change_type)),
+            _ => return Err(format!("Unknown change type: {}", change_type)),
         },
     }
 
     if major < 0 || minor < 0 || patch < 0 {
-        return Err("Resultado de versión inválido (negativo)".to_string());
+        return Err("Invalid (negative) version result".to_string());
     }
 
     Ok(format!("{}.{}.{}", major, minor, patch))

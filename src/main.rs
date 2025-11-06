@@ -42,7 +42,7 @@ async fn main() {
     debug!("log_level: {}", log_filter_str);
 
     if cli.debug {
-        debug!("Modo DEBUG habilitado por flag CLI.");
+        debug!("DEBUG mode enabled via CLI flag.");
     }
 
     match &cli.command {
@@ -72,7 +72,7 @@ async fn main() {
                             let mut all_files_verified = true;
 
                             // FASE 1: VERIFICACIÓN Y SIMULACIÓN
-                            println!("\n-- Verificando y simulando cambios... --");
+                            print!("-- Verifying and simulating changes... --");
 
                             for replace in &config.replaces {
                                 
@@ -99,7 +99,7 @@ async fn main() {
                                 debug!("Pattern TO: {}", pattern_to);
 
                                 debug!(
-                                    "Simulando archivo: {} | FROM: {} | TO (Verif): {}",
+                                    "Simulating file: {} | FROM: {} | TO (Verif): {}",
                                     replace.file, pattern_from, pattern_to
                                 );
 
@@ -115,7 +115,7 @@ async fn main() {
                                         modified_files.push((replace.file.clone(), content));
                                     }
                                     Err(e) => {
-                                        error!(File=%replace.file, "FALLO DE SIMULACIÓN CRÍTICA: {}", e);
+                                        error!(File=%replace.file, "CRITICAL SIMULATION FAILURE: {}", e);
                                         all_files_verified = false;
                                         break;
                                     }
@@ -124,15 +124,15 @@ async fn main() {
 
                             // FASE 2: EJECUCIÓN (sin cambios)
                             if all_files_verified {
-                                println!("\n-- Aplicando cambios a disco... --");
+                                print!("-- Applying changes... --");
 
                                 for (file_path, content) in modified_files {
                                     match apply_replacement(file_path.as_str(), &content).await {
                                         Ok(_) => {
-                                            println!("✅ Actualizado: {}", file_path);
+                                            println!("✅ Updated: {}", file_path);
                                         }
                                         Err(e) => {
-                                            error!(File=%file_path, "FALLO CRÍTICO al escribir: {}", e);
+                                            error!(File=%file_path, "CRITICAL WRITE FAILURE: {}", e);
                                         }
                                     }
                                 }
@@ -140,17 +140,17 @@ async fn main() {
                                 config.current_version = new_version;
                                 config.write(&config_path).await;
                                 println!(
-                                    "\n🎉 Éxito: Versión de configuración actualizada a {}",
+                                    "🎉 Success: Config version updated to {}",
                                     config.current_version
                                 );
                             } else {
                                 error!(
-                                    "\nUpgrade abortado. No se realizaron cambios en los archivos."
+                                    "Upgrade aborted. No changes were written to files."
                                 );
                             }
                         }
                         Err(e) => {
-                            error!("Error al calcular la versión: {}", e);
+                            error!("Error calculating the version: {}", e);
                         }
                     }
                 }
@@ -183,7 +183,7 @@ async fn main() {
                             let mut all_files_verified = true;
 
                             // FASE 1: VERIFICACIÓN Y SIMULACIÓN
-                            println!("\n-- Verificando y simulando cambios (Downgrade)... --");
+                            println!("-- Verifying and simulating changes (Downgrade)... --");
 
                             for replace in &config.replaces {
                                 
@@ -210,7 +210,7 @@ async fn main() {
                                 debug!("Pattern TO: {}", pattern_to);
                                 
                                 debug!(
-                                    "Simulando archivo: {} | FROM: {} | TO (Verif): {}",
+                                    "Simulating file: {} | FROM: {} | TO (Verif): {}",
                                     replace.file, pattern_from, pattern_to
                                 );
 
@@ -226,7 +226,7 @@ async fn main() {
                                         modified_files.push((replace.file.clone(), content));
                                     }
                                     Err(e) => {
-                                        error!(File=%replace.file, "FALLO DE SIMULACIÓN CRÍTICA: {}", e);
+                                        error!(File=%replace.file, "CRITICAL FAILURE SIMULATION: {}", e);
                                         all_files_verified = false;
                                         break;
                                     }
@@ -235,15 +235,15 @@ async fn main() {
 
                             // FASE 2: EJECUCIÓN (sin cambios)
                             if all_files_verified {
-                                println!("\n-- Aplicando cambios a disco... --");
+                                print!("-- Applying changes... --");
 
                                 for (file_path, content) in modified_files {
                                     match apply_replacement(file_path.as_str(), &content).await {
                                         Ok(_) => {
-                                            println!("✅ Actualizado (Downgrade): {}", file_path);
+                                            println!("✅ Updated (Downgrade): {}", file_path);
                                         }
                                         Err(e) => {
-                                            error!(File=%file_path, "FALLO CRÍTICO al escribir: {}", e);
+                                            error!(File=%file_path, "CRITICAL WRITE FAILURE: {}", e);
                                         }
                                     }
                                 }
@@ -251,17 +251,17 @@ async fn main() {
                                 config.current_version = target_version.clone();
                                 config.write(&config_path).await;
                                 println!(
-                                    "\n🎉 Éxito: Versión de configuración actualizada a {}",
+                                    "\n🎉 Success: Config version updated to {}",
                                     config.current_version
                                 );
                             } else {
                                 error!(
-                                    "\nDowngrade abortado debido a fallos de simulación en los archivos."
+                                    "\nDowngrade aborted due to simulation failures in files."
                                 );
                             }
                         }
                         Err(e) => {
-                            error!("Error al calcular la versión de downgrade: {}", e);
+                            error!("Error calculating the downgrade version: {}", e);
                         }
                     }
                 }
@@ -285,7 +285,7 @@ async fn main() {
                             println!("Preview version (Increment): {}", new_version);
                         }
                         Err(e) => {
-                            error!("Error al calcular la versión: {}", e);
+                            error!("Error calculating the version: {}", e);
                         }
                     }
                 }
