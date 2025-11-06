@@ -1,5 +1,4 @@
-current_version: 0.2.0
+current_version: 0.3.0
 replaces:
 - file: Cargo.toml
-  search: ^version\s*=\s*\"{{current_version}}\"$
-  replace: version = "{{new_version}}"
+  pattern: ^version\s*=\s*\"{{current_version}}\"$

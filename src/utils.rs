@@ -1,11 +1,39 @@
 use regex::Regex;
 use std::{env, io, path::PathBuf};
 use tokio::fs;
+use tracing::debug;
 
 use crate::config;
 use crate::cli::VersionArgs;
 
 const APP_NAME: &str = "vampus";
+
+
+// =============================================================================================
+// LÓGICA DE UTILIDAD
+// =============================================================================================
+
+/// Envuelve el patrón de búsqueda del usuario con grupos de captura () alrededor 
+/// del texto que precede y sigue al marcador {{current_version}}.
+/// 
+/// Ejemplo: "^version = \"{{current_version}}\"$" -> "(^version = \"){{current_version}}(\"$)"
+pub fn wrap_search_pattern(search_pattern: &str) -> String {
+    // Intentar dividir la cadena usando el marcador de versión
+    let parts: Vec<&str> = search_pattern.split("{{current_version}}").collect();
+
+    // Verificamos que se haya dividido en al menos dos partes (antes y después del marcador)
+    if parts.len() < 2 {
+        // Si no se encuentra el marcador, se devuelve el patrón original.
+        // Esto asume que el usuario sabe lo que hace, pero fallará si no hay versión.
+        return search_pattern.to_string(); 
+    }
+
+    let prefix = parts[0];
+    let suffix = parts[1];
+    
+    // Envolver el prefijo y el sufijo en grupos de captura de RegEx (usando el formato de reemplazo $1 y $2)
+    format!("({prefix}){{{{current_version}}}}({suffix})")
+}
 
 // =============================================================================================
 // LÓGICA DE ARCHIVOS (TRANSACCIONAL)
@@ -59,6 +87,7 @@ pub async fn simulate_replacement(
 
     // 5. Reemplazo de la Cadena usando la RegEx (Simulación).
     let modified_content = re_from.replace_all(&content, replacement_to);
+    debug!("Contenido modificado simulado:\n{}", modified_content);
 
     // 6. Verificación del Reemplazo (CRÍTICO): La nueva versión DEBE estar presente.
     if re_to.is_match(&modified_content) {

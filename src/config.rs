@@ -9,18 +9,16 @@ use tracing::{debug, error};
 pub struct Replace {
     #[serde(default = "get_default_file")]
     pub file: String,
-    #[serde(default = "get_default_search")]
-    pub search: String,
-    #[serde(default = "get_default_replace")]
-    pub replace: String,
+    #[serde(default = "get_default_pattern")]
+    pub pattern: String,
+    // Eliminado: El campo 'replace' ha sido removido.
 }
 
 impl Replace {
     pub fn default() -> Self {
         Self {
             file: get_default_file(),
-            search: get_default_search(),
-            replace: get_default_replace(),
+            pattern: get_default_pattern(),
         }
     }
 }
@@ -40,12 +38,9 @@ fn get_default_file() -> String {
     "Cargo.toml".to_string()
 }
 
-fn get_default_search() -> String {
+// MODIFICADO: Patrón simple. La envoltura de captura se hace en main.rs.
+fn get_default_pattern() -> String {
     "version = \"{{current_version}}\"".to_string()
-}
-
-fn get_default_replace() -> String {
-    "version = \"{{new_version}}\"".to_string()
 }
 
 fn get_default_replaces() -> Vec<Replace> {
