@@ -11,7 +11,6 @@ pub struct Replace {
     pub file: String,
     #[serde(default = "get_default_pattern")]
     pub pattern: String,
-    // Eliminado: El campo 'replace' ha sido removido.
 }
 
 impl Replace {
